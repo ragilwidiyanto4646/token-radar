@@ -54,16 +54,24 @@ pre-token protocol, and writes `board.json`, `data.js`, `dashboard/`,
    a tokenised parent) and Saturn (a stablecoin wrapper) — but the gate
    requires full coverage, so they are ranked by the same model and
    flagged `onWatchlist` (★ in the table).
-3. **Wrapped / staked products and custodial value excluded.** WBTC,
+3. **Wrapped / staked products, versioned pools and custodial value excluded.** WBTC,
    Binance staked ETH, Coinbase Wrapped Staked ETH, stablecoins that
    already trade, CEXs and bridges / canonical bridges: their TVL is
    other people's assets or other chains' tokens, not protocol value a
-   launch could capitalise on.
+   launch could capitalise on. Names ending in a version marker (V2, V3,
+   2.0…) are versioned pools of another protocol, not a launch of their
+   own, so the early radar leaves them out (unless the watchlist names
+   one, which the gate requires).
 4. **Implied FDV.** Per category, the median `mcap / TVL` of tokenised
    peers in the same category (≥3 peers, clamped 0.05–5×; global median
-   otherwise) × the candidate's TVL, capped at $100B. All multiples are
-   computed from the snapshot itself, never hard-coded. Rows are ranked
-   by implied value (rank 1 is the most valuable).
+   otherwise) × the candidate's TVL × a **growth multiplier** (1 + its
+   seven-day TVL change, clamped to −60…+120%, × 0.5) × a **maturity
+   multiplier** (0.6 + min(age in days, 1095) / 1095 × 0.4; age unknown:
+   365 days), capped at $100B. All multiples are computed from the
+   snapshot itself, never hard-coded. Rows are ranked by implied value
+   (rank 1 is the most valuable). Each row carries its own derivation
+   (TVL × multiple × growth × maturity) and the dashboard's detail view
+   shows it.
 5. **Expected value = implied FDV × launch likelihood**, where
    likelihood is a category prior (prediction markets 0.85 … chains
    0.35) adjusted for multi-chain spread, audits and age.
@@ -71,16 +79,17 @@ pre-token protocol, and writes `board.json`, `data.js`, `dashboard/`,
    likelihood + 15 × log-normalised TVL. Tiers: S = top 10, A ≥ 60,
    B ≥ 40, C below.
 7. **Farm plans** are category playbooks (recurring real use, held
-   positions, 30–90 days), written to `farm_steps` as 3–12 strings of
-   20–600 characters each. They describe how to be a genuine user, not
+   positions) — every step states what it costs and how long it takes,
+   with the capital sized from the protocol's own TVL ($50–$250) and the
+   hold from its age (30–60 days). They describe how to be a genuine user, not
    a guarantee — a protocol may never launch a token, or may launch
    without an airdrop. Not financial advice.
 
 On the sealed snapshot (2026-11-14): 758 protocols → 416 already have
 a token, 17 are wrapped / staked products, 93 are CEX/bridge entries,
-1 duplicate variant merged, 40 watchlist slugs force-included →
-**231 rows** (≥ the required 100). Top 5: Sentora Curator, Steakhouse
-Financial, Gauntlet, Veda, USDD.
+11 are versioned pools, 40 watchlist slugs force-included →
+**221 rows** (≥ the required 100). Top 5: Steakhouse Financial,
+Sentora Curator, Gauntlet, Veda, USDD.
 
 ## Outputs
 

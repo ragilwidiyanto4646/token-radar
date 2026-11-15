@@ -107,9 +107,9 @@
       return '<tr data-slug="' + esc(r.slug) + '"><td><span class="tier ' + r.valueTier + '">' + r.valueTier + '</span> ' + r.rank +
         (r.onWatchlist ? ' <span class="star" title="On the house watchlist">★</span>' : '') + '</td><td><b>' + esc(r.name) + '</b></td><td>' + esc(r.category) + '</td><td>' +
         (r.chains || []).slice(0, 3).map(esc).join(', ') + ((r.chains || []).length > 3 ? ' +' + ((r.chains || []).length - 3) : '') + '</td>' +
-        '<td class="num">' + fmt(r.tvlUsd) + '</td><td class="num">' + fmt(r.implied_value_usd) + '</td>' +
+        '<td class="num">' + fmt(r.tvlUsd) + '</td><td class="num">' + pct(r.change7dPct) + '</td><td class="num">' + fmt(r.implied_value_usd) + '</td>' +
         '<td class="num">' + Math.round(r.launchLikelihood * 100) + '%</td><td class="num"><b>' + r.score + '</b></td></tr>';
-    }).join('') || '<tr><td colspan="8">No protocols match this filter.</td></tr>';
+    }).join('') || '<tr><td colspan="9">No protocols match this filter.</td></tr>';
     Array.prototype.forEach.call(document.querySelectorAll('#rows tr[data-slug]'), function (tr) {
       tr.addEventListener('click', function () { show(tr.getAttribute('data-slug')); });
     });
@@ -139,6 +139,9 @@
       '<p><b>TVL:</b> ' + fmt(r.tvlUsd) + ' &nbsp; <b>Implied FDV:</b> ' + fmt(r.implied_value_usd) + ' (' + r.categoryMultiple + '× TVL, median of ' + r.categoryPeers +
       ' tokenised ' + esc(r.category) + ' peers) &nbsp; <b>Launch likelihood:</b> ' + Math.round(r.launchLikelihood * 100) + '% &nbsp; <b>Expected value:</b> ' + fmt(r.expectedValueUsd) +
       ' &nbsp; <b>Radar score:</b> ' + r.score + '/100 &nbsp; <b>7d:</b> ' + pct(r.change7dPct) + '</p>' +
+      '<p class="method"><b>How the value was estimated:</b> TVL ' + fmt(r.tvlUsd) + ' × ' + r.categoryMultiple + '× (median mcap/TVL of ' + r.categoryPeers +
+      ' tokenised ' + esc(r.category) + ' peers) × ' + r.growthMultiplier + ' (7d growth ' + pct(r.change7dPct) + ') × ' + r.maturityMultiplier +
+      ' (maturity: ' + (r.ageDays === null ? 'age unreported, modelled as 365 days' : r.ageDays + ' days since first tracked') + ') = ' + fmt(r.implied_value_usd) + ' implied FDV.</p>' +
       '<p><b>DefiLlama:</b> defillama.com/protocol/' + esc(r.slug) + (r.twitter ? ' &nbsp; <b>X:</b> @' + esc(r.twitter) : '') + '</p>' +
       '<p class="method"><b>Token check:</b> ' + esc(r.evidence.tokenCheck) + (r.evidence.variantsMerged > 1 ? ' (' + r.evidence.variantsMerged + ' variants merged)' : '') + '.</p>' +
       (comp ? '<p><b>Tokenised comparables:</b> ' + comp + '</p>' : '') +
