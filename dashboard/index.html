@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar — protocols with no token, ranked by launch value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+<h1>Token Launch Radar <span>— no token yet</span></h1>
+<p class="sub">Every protocol DefiLlama tracks that still records <b>no token</b> and is not a wrapped / staked product of one that trades — ranked by what its launch would be worth (implied FDV from tokenised peers in the same category, × launch likelihood). Click any row for its detail view and farm plan.</p>
+</header>
+<div class="stats" id="stats"></div>
+<main>
+<div class="tabs" role="tablist">
+<button id="tab-board" role="tab" aria-selected="true">Board — pre-token</button>
+<button id="tab-live" role="tab" aria-selected="false">Live tokens — already trading</button>
+</div>
+<div class="filters" id="filters">
+<input id="q" type="search" placeholder="Search name, category, chain…" aria-label="Search">
+<select id="cat" aria-label="Category"><option value="">All categories</option></select>
+<select id="chain" aria-label="Chain"><option value="">All chains</option></select>
+<select id="tier" aria-label="Tier"><option value="">All tiers</option><option>S</option><option>A</option><option>B</option><option>C</option></select>
+<select id="sort" aria-label="Sort"><option value="rank">Sort: Implied value (rank)</option><option value="score">Sort: Radar score</option><option value="tvl">Sort: TVL</option><option value="expected">Sort: Expected value</option></select>
+</div>
+<p class="count" id="count"></p>
+<table id="board-table"><thead><tr><th>#</th><th>Protocol</th><th>Category</th><th>Chains</th><th class="num">TVL</th><th class="num">Implied FDV</th><th class="num">Likelihood</th><th class="num">Score</th></tr></thead><tbody id="rows"></tbody></table>
+<table id="live-table" hidden><thead><tr><th>Protocol</th><th>Category</th><th>Chains</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">7d</th></tr></thead><tbody id="live-rows"></tbody></table>
+<section id="detail" aria-live="polite"><h2>Protocol detail</h2><p class="method">Select a row above to see a protocol's detail view: its numbers, how the value was estimated, its tokenised comparables, and the step-by-step farm plan.</p></section>
+<section class="method"><h2>Methodology — read this before trusting the board</h2>
+<p><b>1. Token check.</b> A protocol counts as "no token" only if the snapshot records no <code>gecko_id</code>, no <code>cmcId</code> and no token symbol — and no variant of the same protocol (e.g. Aave V3, Hyperliquid Bridge) records one either. That matters: in the raw DefiLlama feed many versioned entries carry the parent token's symbol with a null <code>gecko_id</code>, and a naive <code>gecko_id</code>-only filter would wrongly rank Aave, Uniswap and LayerZero as token-less.</p>
+<p><b>2. The watchlist is the floor, never the ceiling.</b> The board covers the whole house watchlist (40 protocols at or above the $50M floor with no token recorded), plus the pre-token protocols below the floor the radar exists to find. Four names on the watchlist would fail our stricter screens — USDD (a stablecoin), Bittensor dTAO (a staked-asset product), Mezo Earn (an earn vault of a tokenised parent) and Saturn (a stablecoin wrapper) — but the gate requires full coverage, so they are ranked by the same model and marked ★ in the table. A protocol on the list may still have a token its DefiLlama record does not carry: the board says it <i>records</i> no token, never that it has none.</p>
+<p><b>3. Wrapped / staked products excluded.</b> Anything whose name is a wrapped or staked asset (WBTC, Binance staked ETH, Coinbase Wrapped Staked ETH…) is a product of a token that trades, not a launch candidate. Centralised exchanges and bridges / canonical bridges are excluded too: their TVL is other people's assets or other chains' tokens, not protocol value a launch could capitalise on.</p>
+<p><b>4. Implied FDV.</b> For each category, the median <code>mcap / TVL</code> of tokenised peers in the same category (≥3 peers, clamped 0.05–5×; global median otherwise) × the candidate's TVL, capped at $100B. All multiples are computed from the snapshot itself, never hard-coded. <b>Expected value = implied FDV × launch likelihood</b>, where likelihood is a category prior (prediction markets 0.85 … chains 0.35) adjusted for multi-chain spread, audits and age.</p>
+<p><b>5. Score (0–100)</b> = 55 × log-normalised expected value + 30 × likelihood + 15 × log-normalised TVL. Tiers: S = top 10, then A ≥ 60, B ≥ 40, C below. Rows are ranked by implied value (rank 1 is the most valuable); the score is a second opinion, not the rank.</p>
+<p><b>6. Farm plans</b> are category playbooks (recurring real use, held positions, 30–90 days) — they describe how to be a genuine user, not a guarantee. A protocol may never launch a token, or may launch without an airdrop. Not financial advice; check audits and use only funds you can afford to lose.</p>
+<p id="accounting" class="method"></p></section>
+</main>
+<footer>Token Launch Radar — built for make.fun bounty token-radar-01. Static page: no external requests, all data is in data.js beside this folder. Sources: DefiLlama (protocol data, api.llama.fi/protocols) and each protocol's own site.</footer>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
