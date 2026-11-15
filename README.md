@@ -73,15 +73,17 @@ pre-token protocol, and writes `board.json`, `data.js`, `dashboard/`,
    (TVL × multiple × growth × maturity) and the dashboard's detail view
    shows it.
 5. **Expected value = implied FDV × launch likelihood**, where
-   likelihood is a category prior (prediction markets 0.85 … chains
-   0.35) adjusted for multi-chain spread, audits and age.
+   likelihood is the category's base rate from the snapshot itself — the
+   share of protocols in the same category that already record a token,
+   shrunk toward the snapshot's global share — adjusted for multi-chain
+   spread, audits and age.
 6. **Score (0–100)** = 55 × log-normalised expected value + 30 ×
    likelihood + 15 × log-normalised TVL. Tiers: S = top 10, A ≥ 60,
    B ≥ 40, C below.
 7. **Farm plans** are category playbooks (recurring real use, held
    positions) — every step states what it costs and how long it takes,
-   with the capital sized from the protocol's own TVL ($50–$250) and the
-   hold from its age (30–60 days). They describe how to be a genuine user, not
+   with the capital sized from the protocol's own TVL ($50–$250), the
+   hold from its age (30–60 days) and the gas from its main chain. They describe how to be a genuine user, not
    a guarantee — a protocol may never launch a token, or may launch
    without an airdrop. Not financial advice.
 

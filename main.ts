@@ -413,45 +413,64 @@ const EXCLUDED_CATEGORIES = new Set([
   "Decentralized BTC",
 ]);
 
-// Prior for "would this protocol plausibly launch a token, and would the
-// market care?" — used only as a multiplier on implied value, never alone.
-const CATEGORY_LIKELIHOOD: Record<string, number> = {
-  "Prediction Market": 0.85,
-  Lending: 0.8,
-  Dexs: 0.78,
-  "Liquid Staking": 0.72,
-  Yield: 0.72,
-  Restaking: 0.7,
-  Derivatives: 0.7,
-  "Yield Aggregator": 0.7,
-  "Risk Curators": 0.65,
-  CDP: 0.65,
-  "CDP Manager": 0.6,
-  RWA: 0.6,
-  "Onchain Capital Allocator": 0.6,
-  "Basis Trading": 0.6,
-  "Collateral Markets": 0.6,
-  "Leveraged Farming": 0.6,
-  "Staking Pool": 0.55,
-  "Liquidity Manager": 0.55,
-  Options: 0.55,
-  Payments: 0.45,
-  Chain: 0.35,
-};
+// Launch likelihood, derived from the snapshot itself — never a hand-set
+// table of priors. For each category, the base rate is the share of
+// protocols in that category that already record a token: a category
+// where most protocols have launched (DEXs, lending) reads as likelier
+// to launch than one where almost none have. The rate is shrunk toward
+// the snapshot's global tokenised share (strength 5), so a category with
+// one or two protocols does not read as 0% or 100%. The base rate is
+// then adjusted for multi-chain spread, audits, age and a public social
+// presence — the same adjustments for every row, and no protocol name is
+// ever special-cased.
+const BASE_RATE_SHRINK = 5;
+
+interface CategoryBaseRate {
+  tokenised: number;
+  total: number;
+  rate: number;
+}
+
+function buildCategoryBaseRates(all: RawProtocol[]): { rates: Map<string, CategoryBaseRate>; globalRate: number } {
+  const counts = new Map<string, { tokenised: number; total: number }>();
+  let globalTokenised = 0;
+  for (const p of all) {
+    const c = counts.get(p.category || "") || { tokenised: 0, total: 0 };
+    c.total++;
+    if (hasToken(p)) {
+      c.tokenised++;
+      globalTokenised++;
+    }
+    counts.set(p.category || "", c);
+  }
+  const globalRate = all.length > 0 ? globalTokenised / all.length : 0.5;
+  const rates = new Map<string, CategoryBaseRate>();
+  for (const [cat, c] of counts) {
+    rates.set(cat, {
+      tokenised: c.tokenised,
+      total: c.total,
+      rate: (c.tokenised + BASE_RATE_SHRINK * globalRate) / (c.total + BASE_RATE_SHRINK),
+    });
+  }
+  return { rates, globalRate };
+}
 
 function isWrappedOrStakedProduct(p: RawProtocol): boolean {
   return WRAPPED_RE.test(p.name || "") || WRAPPED_RE.test(p.slug || "");
 }
 
-/** Likelihood from the category prior, adjusted for chains, audits and age — all against the snapshot's own date. */
-function categoryLikelihood(p: RawProtocol, refMs: number): number {
-  // A snapshot category is untrusted text: a plain-object lookup must not
-  // fall through to Object.prototype ("constructor", "toString", "__proto__",
-  // ... are all truthy lookups). A prototype name as a category used to
-  // return a function here, which clamped to NaN and poisoned every row's
-  // score — and crashed farmPlan below. Only own keys are priors.
-  const cat = p.category || "";
-  let l = Object.hasOwn(CATEGORY_LIKELIHOOD, cat) ? CATEGORY_LIKELIHOOD[cat]! : 0.55;
+/** Likelihood from the category base rate, adjusted for chains, audits and age — all against the snapshot's own date. */
+function categoryLikelihood(
+  p: RawProtocol,
+  refMs: number,
+  base: { rates: Map<string, CategoryBaseRate>; globalRate: number },
+): number {
+  // A Map lookup, not a plain-object one: a snapshot category naming an
+  // Object.prototype property ("constructor", "toString", "__proto__",
+  // ...) must not fall through to an inherited value and poison the
+  // score. An unknown category reads the snapshot's global rate.
+  const entry = base.rates.get(p.category || "");
+  let l = entry ? entry.rate : base.globalRate;
   const chains = (p.chains || []).length;
   if (chains >= 5) l += 0.05;
   else if (chains >= 3) l += 0.03;
@@ -626,6 +645,7 @@ function selectEligible(all: RawProtocol[], watchlist: string[]): { kept: Eligib
 
 function rankRows(all: RawProtocol[], kept: EligibleEntry[], refMs: number): BoardRow[] {
   const { stats, globalMultiple } = buildCategoryStats(all);
+  const baseRates = buildCategoryBaseRates(all);
   // Implied launch value, from the snapshot's own figures alone:
   //   TVL x category median mcap/TVL of tokenised peers
   //     x growth multiplier (seven-day TVL change, clamped -60..+120%)
@@ -642,7 +662,7 @@ function rankRows(all: RawProtocol[], kept: EligibleEntry[], refMs: number): Boa
     const gm = growthMultiplier(p.change_7d).multiplier;
     const mm = maturityMultiplier(age);
     const impliedFdv = Math.min(num(p.tvl) * multiple * gm * mm, 100e9);
-    const likelihood = categoryLikelihood(p, refMs);
+    const likelihood = categoryLikelihood(p, refMs, baseRates);
     const expectedValue = impliedFdv * likelihood;
     return { e, multiple, peers, age, gm, mm, impliedFdv, likelihood, expectedValue };
   });
@@ -827,6 +847,156 @@ const CATEGORY_PLAYBOOK: Record<string, { verb: string; steps: string[] }> = {
       "Reinvest / top up rather than withdrawing and re-depositing the same funds.",
     ],
   },
+  CDP: {
+    verb: "mint against collateral",
+    steps: [
+      "Open a vault with ETH or a liquid staking token as collateral and mint the protocol's stablecoin against it — keep the collateral ratio well above the liquidation line.",
+      "Repay part of the debt and re-mint at least once, so the position shows management, not a single deposit.",
+      "Use the minted stablecoin in a real position (lending or LP) instead of selling it the same day.",
+    ],
+  },
+  "CDP Manager": {
+    verb: "manage a CDP",
+    steps: [
+      "Open a collateralised debt position through the protocol's dashboard and keep it healthy through a price move.",
+      "Adjust collateral up and down at least once, and migrate or refinance the position between vaults if the protocol supports it.",
+    ],
+  },
+  "Basis Trading": {
+    verb: "deposit into basis vaults",
+    steps: [
+      "Deposit into the protocol's flagship basis / delta-neutral vault and hold for 30+ days, through at least one full funding cycle.",
+      "Top up after the first epoch instead of withdrawing — basis vaults reward depositors who stay through a cycle.",
+    ],
+  },
+  "Collateral Markets": {
+    verb: "supply collateral and borrow",
+    steps: [
+      "Supply collateral to the protocol's market and borrow against it, keeping a healthy margin above liquidation.",
+      "Repay and re-borrow at least once over the holding period, so the position shows a full loop.",
+    ],
+  },
+  Chain: {
+    verb: "use the chain",
+    steps: [
+      "Bridge assets onto the chain through its official bridge and hold a balance there for 30+ days.",
+      "Use two or three of the chain's native apps (its DEX, its lending market, its perps) with real transactions across several weeks.",
+      "Keep the wallet active in more than one week — a chain reads sustained use, not one burst.",
+    ],
+  },
+  Payments: {
+    verb: "pay through the protocol",
+    steps: [
+      "Pay for something real through the protocol (a bill, a card top-up, a transfer) on at least 3 separate weeks.",
+      "Receive a payment through it too, so the wallet shows both directions, and keep a small balance between payments.",
+    ],
+  },
+  Restaking: {
+    verb: "restake",
+    steps: [
+      "Restake a liquid staking token through the protocol and hold the receipt token for 30+ days.",
+      "Use the receipt token in a DeFi position (lending or LP) instead of selling it.",
+    ],
+  },
+  "Liquid Restaking": {
+    verb: "restake liquid staking tokens",
+    steps: [
+      "Restake ETH or a liquid staking token through the protocol and hold the restaked receipt token.",
+      "Deploy the receipt token in one DeFi position and keep it there for 30+ days.",
+    ],
+  },
+  "Stablecoin Wrapper": {
+    verb: "use the wrapped stablecoin",
+    steps: [
+      "Hold the wrapped stablecoin and use it in a real position (lending or LP) for 30+ days, rather than minting and redeeming the same day.",
+      "Use it on a second chain the protocol supports, if any, so the activity is not single-chain.",
+    ],
+  },
+  "OTC Marketplace": {
+    verb: "trade OTC",
+    steps: [
+      "Post a real offer on the protocol's OTC desk and complete at least one trade as maker and one as taker.",
+      "Settle through the protocol's escrow or contract, never off-platform.",
+    ],
+  },
+  CeDeFi: {
+    verb: "use the CeDeFi product",
+    steps: [
+      "Deposit into the protocol's CeDeFi vault or structured product and hold for 30+ days.",
+      "Complete any KYC the product requires through its official flow, and claim rewards only from its own UI.",
+    ],
+  },
+  Farm: {
+    verb: "farm",
+    steps: [
+      "Deposit into the protocol's flagship farm and hold through at least one full rewards epoch.",
+      "Harvest or compound rewards through the protocol's own UI instead of letting them sit unclaimed.",
+      "Add to the position in a second month rather than withdrawing and re-depositing the same funds.",
+    ],
+  },
+  "Staking Pool": {
+    verb: "stake in the pool",
+    steps: [
+      "Stake the chain's native asset in the protocol's pool and hold the receipt token for 30+ days.",
+      "Use the receipt token in a lending market or LP instead of unstaking immediately.",
+    ],
+  },
+  "Liquidity Manager": {
+    verb: "deposit into managed vaults",
+    steps: [
+      "Deposit into the protocol's managed LP vault (its highest-TVL one) and hold for 30+ days.",
+      "Let the manager rebalance — do not withdraw and re-deposit around each rebalance.",
+    ],
+  },
+  Insurance: {
+    verb: "buy or provide cover",
+    steps: [
+      "Buy cover for a protocol or asset you actually use, through the protocol's own UI, and hold it to expiry.",
+      "Provide cover capital to a pool if the protocol allows it, and keep it staked for a full cover period.",
+    ],
+  },
+  "Governance Incentives": {
+    verb: "lock and vote",
+    steps: [
+      "Lock or stake the protocol's governance asset where it offers incentives, and vote on at least two proposals.",
+      "Hold the lock through a full voting cycle instead of exiting after the first reward.",
+    ],
+  },
+  "Leveraged Farming": {
+    verb: "farm with leverage",
+    steps: [
+      "Open a leveraged farm position with modest leverage (2× or less) on the protocol's core pair and check its health factor weekly.",
+      "Top up collateral rather than letting the position drift toward liquidation, and close only after 30+ days.",
+    ],
+  },
+  "Crypto Card Issuer": {
+    verb: "spend with the card",
+    steps: [
+      "Order the protocol's card, top it up, and spend with it on at least 3 separate weeks.",
+      "Keep a balance on the card between spends rather than topping up and draining it in one go.",
+    ],
+  },
+  "Uncollateralized Lending": {
+    verb: "lend or borrow uncollateralised",
+    steps: [
+      "Lend to the protocol's borrower pools and hold the position for 30+ days.",
+      "Borrow only if the protocol opens it to you (it usually needs approval) — and repay on schedule if you do.",
+    ],
+  },
+  "Interest Rate Derivatives": {
+    verb: "trade rates",
+    steps: [
+      "Trade a rate position (fixed vs floating) on the protocol over several weeks, in small size.",
+      "Provide liquidity to the protocol's rate AMM or pool if it offers one, and hold it for 30+ days.",
+    ],
+  },
+  Indexes: {
+    verb: "hold the index",
+    steps: [
+      "Buy the protocol's index token and hold it for 30+ days, through at least one rebalance.",
+      "Mint or redeem through the protocol's own UI at least once, so the position is not only a secondary-market buy.",
+    ],
+  },
 };
 
 const DEFAULT_PLAYBOOK = {
@@ -844,6 +1014,51 @@ function capitalFor(p: RawProtocol): number {
   if (num(p.tvl) >= 1_000_000_000) return 150;
   if (num(p.tvl) >= 100_000_000) return 100;
   return 50;
+}
+
+/** Typical cost of one simple transaction on a chain, in whole USD — used
+ * only to size the gas figures in farm plans, never to move a rank.
+ * Chain names are DefiLlama's own spellings from the snapshot. */
+const CHAIN_GAS_USD: Record<string, number> = {
+  Ethereum: 8,
+  Solana: 0.05,
+  Base: 0.5,
+  Arbitrum: 0.5,
+  Optimism: 0.5,
+  Polygon: 0.3,
+  Binance: 0.5,
+  Avalanche: 0.5,
+  Linea: 0.5,
+  Sui: 0.05,
+  Mantle: 0.5,
+  Fantom: 0.3,
+  Scroll: 0.5,
+  Berachain: 0.5,
+  "zkSync Era": 0.5,
+  Unichain: 0.5,
+  "Hyperliquid L1": 0.05,
+  Tron: 1,
+  xDai: 0.5,
+  Sonic: 0.5,
+  Monad: 0.5,
+  Sei: 0.05,
+  TON: 0.05,
+  Aptos: 0.05,
+  Near: 0.05,
+  Cardano: 0.3,
+};
+
+/** Gas for a chain, in USD — a plain-object lookup needs the same
+ * prototype guard as the playbooks (a chain named "constructor" must
+ * read the default, not Object.prototype.constructor). */
+function gasUsdFor(chain: string | undefined): number {
+  if (!chain) return 2;
+  return Object.hasOwn(CHAIN_GAS_USD, chain) ? CHAIN_GAS_USD[chain]! : 2;
+}
+
+/** A gas figure that reads as a figure: "about $8", "under $1". */
+function gasText(g: number): string {
+  return g >= 1 ? `about $${Math.round(g)}` : "under $1";
 }
 
 /** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
@@ -864,6 +1079,7 @@ function farmPlan(p: RawProtocol, age: number | null): BoardRow["farmPlan"] {
   const chains = (p.chains || []).slice(0, 3).join(", ") || "its supported chain";
   const capital = capitalFor(p);
   const hold = holdDaysFor(age);
+  const gas = gasUsdFor(chain);
   // The playbooks say "30+ days" generically; the plan states the number
   // this protocol's age actually implies, so every step's time is concrete.
   const play = book.steps.map((a) => a.replace("30+ days", `${hold} days`));
@@ -872,7 +1088,7 @@ function farmPlan(p: RawProtocol, age: number | null): BoardRow["farmPlan"] {
       step: 1,
       action: "Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.",
       why: "A farming wallet keeps the activity separate from your main holdings.",
-      estCostUsd: "under $3 of gas for the first transaction",
+      estCostUsd: `${gasText(gas)} of gas for the first transaction`,
       estTime: "5 minutes",
     },
     ...play.map((action, i) => ({
@@ -882,7 +1098,7 @@ function farmPlan(p: RawProtocol, age: number | null): BoardRow["farmPlan"] {
         i === 0
           ? "Creates an on-chain footprint tied to your wallet over time."
           : "Depth and consistency are what airdrop snapshots usually reward.",
-      estCostUsd: i === 0 ? `$${capital} of capital and about $${capital >= 150 ? 8 : 4} of gas` : "about $2 of gas a week",
+      estCostUsd: i === 0 ? `$${capital} of capital and ${gasText(gas)} of gas` : `${gasText(gas)} of gas a week`,
       estTime: i === 0 ? `15 minutes to set up, then hold ${hold} days` : "10 minutes a week",
     })),
     {
@@ -1013,6 +1229,8 @@ async function main(): Promise<void> {
     maturityDays: MATURITY_DAYS,
     unknownAgeDays: UNKNOWN_AGE_DAYS,
     globalMedianMultiple: Math.round(globalMultiple * 1000) / 1000,
+    launchLikelihood:
+      "category base rate from the snapshot itself: the share of protocols in the same category that already record a token, shrunk toward the snapshot's global tokenised share (strength 5), adjusted +0.05 for 5+ chains (+0.03 for 3-4), +0.04 for an audit, -0.05 if tracked under a year, +0.02 for a public X/Twitter handle; clamped 0.05-0.95. No hand-set prior, no protocol name special-cased",
     expectedValue: "implied_value_usd x launchLikelihood",
     score: "100 * (0.55*logNorm(expectedValue) + 0.30*launchLikelihood + 0.15*logNorm(tvlUsd))",
     tiers: "S = top 10; A >= 60; B >= 40; C < 40",
