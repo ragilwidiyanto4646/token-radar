@@ -237,7 +237,7 @@ function toEpochSeconds(v: unknown): number | null {
 // ---------------------------------------------------------------------------
 
 function mapProtocol(p: Record<string, unknown>): RawProtocol | null {
-  if (typeof p.slug !== "string" || p.slug === "" || typeof p.name !== "string" || p.name === "") return null;
+  if (typeof p.slug !== "string" || p.slug.trim() === "" || typeof p.name !== "string" || p.name.trim() === "") return null;
   // Sealed snapshot names first, live-feed names second.
   const tvl = typeof p.tvl_usd === "number" ? p.tvl_usd : num(p.tvl);
   const mcap = typeof p.mcap_usd === "number" ? p.mcap_usd : typeof p.mcap === "number" ? p.mcap : null;
@@ -445,7 +445,13 @@ function isWrappedOrStakedProduct(p: RawProtocol): boolean {
 
 /** Likelihood from the category prior, adjusted for chains, audits and age — all against the snapshot's own date. */
 function categoryLikelihood(p: RawProtocol, refMs: number): number {
-  let l = CATEGORY_LIKELIHOOD[p.category || ""] ?? 0.55;
+  // A snapshot category is untrusted text: a plain-object lookup must not
+  // fall through to Object.prototype ("constructor", "toString", "__proto__",
+  // ... are all truthy lookups). A prototype name as a category used to
+  // return a function here, which clamped to NaN and poisoned every row's
+  // score — and crashed farmPlan below. Only own keys are priors.
+  const cat = p.category || "";
+  let l = Object.hasOwn(CATEGORY_LIKELIHOOD, cat) ? CATEGORY_LIKELIHOOD[cat]! : 0.55;
   const chains = (p.chains || []).length;
   if (chains >= 5) l += 0.05;
   else if (chains >= 3) l += 0.03;
@@ -849,7 +855,11 @@ function holdDaysFor(age: number | null): number {
 }
 
 function farmPlan(p: RawProtocol, age: number | null): BoardRow["farmPlan"] {
-  const book = CATEGORY_PLAYBOOK[p.category || ""] || DEFAULT_PLAYBOOK;
+  // Same prototype-name guard as categoryLikelihood: CATEGORY_PLAYBOOK["toString"]
+  // is Object.prototype.toString (truthy), so a bare `|| DEFAULT_PLAYBOOK`
+  // would keep it and `book.steps.map` would throw, failing the whole run.
+  const cat = p.category || "";
+  const book = Object.hasOwn(CATEGORY_PLAYBOOK, cat) ? CATEGORY_PLAYBOOK[cat]! : DEFAULT_PLAYBOOK;
   const chain = (p.chains || [])[0] || "its main chain";
   const chains = (p.chains || []).slice(0, 3).join(", ") || "its supported chain";
   const capital = capitalFor(p);
